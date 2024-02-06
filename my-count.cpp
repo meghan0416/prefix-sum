@@ -1,7 +1,7 @@
 /*
 
 Compile: g++ -o myCount my-count.cpp
-Run: ./myCount N M
+Run: ./prefixSum N M
 
 Where N = size of the array, M = number of processes
 
@@ -15,13 +15,15 @@ Where N = size of the array, M = number of processes
 #include <fstream>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <cmath>
 
 using namespace std;
 
-/* Handle errors */
+/* Handle errors and bad input */
+// @param msg: String to be printed
+
 void errmsg(string msg) {
     cerr << msg;
     exit(0);
@@ -43,6 +45,9 @@ int main(int argc, char* argv[]) {
     if((numProcesses < 0) || (arrSize < 0)) {
         errmsg("Invalid arguments provided.\n");
     }
+
+    /* If there are more cores than N, no need to make additional processes */
+    if(numProcesses > arrSize) { numProcesses = arrSize; }
 
     /* Create the shared memory segment */
     int key = 65; // key is arbitrary
@@ -92,8 +97,9 @@ int main(int argc, char* argv[]) {
                     blockEnd = arrSize;
                 }
 
+                // Hillis and Steele algorithm
                 for(int k = blockStart ; k < blockEnd ; k++) {
-                    if(k >= arrSize) { break; } // out of range, don't calculate
+                    if(k >= arrSize) { break; } // Out of range, don't calculate
 
                     if(k < algVal) {
                         Buffer[k] = sumArr[k]; // Same value copied for next iteration
@@ -110,8 +116,6 @@ int main(int argc, char* argv[]) {
         // Wait for all children to complete
         while(wait(&status) > 0);
 
-        // Print contents of buffers
-
         // Swap the buffer arrays
         int* temp = sumArr;
         sumArr = Buffer;
@@ -127,8 +131,7 @@ int main(int argc, char* argv[]) {
     cout << endl;
 
     // Detach from shared memory
-    shmdt((void*) sumArr);
-    shmdt((void*) Buffer);
+    shmdt((void*) memPtr);
 
     // Remove the shared memory segment
     shmctl(memID, IPC_RMID, NULL);
