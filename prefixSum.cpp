@@ -54,8 +54,20 @@ int main(int argc, char* argv[]) {
         sumArr[i] = 1;
     } // Filled with all 1s for testing
 
+    cout << "Input ----\n";
+    for(int i = 0 ; i < arrSize ; i++) {
+        cout << sumArr[i] << " ";
+    }
+    cout << endl;
+
     // Calculate the number of iterations needed
-    int iterations = floor(log2f(numProcesses));
+    int iterations = floor(log2f(arrSize));
+
+    // Calculate the size of each block (index range per process)
+    int blockSize = round((float)arrSize/(float)numProcesses);
+    int blockStart;
+    int blockEnd;
+    int algVal;
 
     int status = 0; // For waiting for child processes
 
@@ -66,15 +78,27 @@ int main(int argc, char* argv[]) {
             if(fork() == 0) {
 
                 /* Child process */
-                int temp = (int)pow(2, i); // Used for algorithm
+                algVal = (int)pow(2, i); // Used for algorithm
 
-                if(j < temp) {
-                    Buffer[j] = sumArr[j]; // Same value copied for next iteration
-                }
-                else {
-                    Buffer[j] = sumArr[j] + sumArr[j - temp];
+                // Determine range for process
+                blockStart = j*blockSize;
+                blockEnd = blockStart + blockSize;
+
+                // If it's the last process, end at arrSize
+                if(j == (numProcesses-1)) {
+                    blockEnd = arrSize;
                 }
 
+                for(int k = blockStart ; k < blockEnd ; k++) {
+                    if(k >= arrSize) { break; } // out of range, don't calculate
+
+                    if(k < algVal) {
+                        Buffer[k] = sumArr[k]; // Same value copied for next iteration
+                    }
+                    else {
+                        Buffer[k] = sumArr[k] + sumArr[k - algVal];
+                    }
+                }
                 // Child process ends
                 exit(0);
             }
@@ -82,6 +106,8 @@ int main(int argc, char* argv[]) {
 
         // Wait for all children to complete
         while(wait(&status) > 0);
+
+        // Print contents of buffers
 
         // Swap the buffer arrays
         int* temp = sumArr;
