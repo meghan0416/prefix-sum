@@ -15,6 +15,9 @@ Where N = size of the array, M = number of processes
 #include <fstream>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <cmath>
+#include <cstdlib>
+#include <cstdio>
 
 using namespace std;
 
