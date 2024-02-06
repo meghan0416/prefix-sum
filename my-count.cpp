@@ -1,12 +1,11 @@
 /*
 
 Compile: g++ -o myCount my-count.cpp
-Run: ./prefixSum N M
+Run: ./prefixSum N M A.txt B.txt
 
-Where N = size of the array, M = number of processes
+Where N = size of the array, M = number of processes, A.txt = the input filename, B.txt = the output filename
 
 */
-
 
 #include <sys/wait.h>
 #include <stdio.h>
@@ -31,23 +30,43 @@ void errmsg(string msg) {
 
 int main(int argc, char* argv[]) {
 
-    int numArgs = 2; // Testing with only values N and M for now
+    int numArgs = 4; // Values N, M, input file string, output file string
 
     /* Clean exit if not enough args */
     if(argc < (numArgs+1)) {
         errmsg("Not enough arguments provided.\n");
     }
     
+    /* Assign the input args */
     int arrSize = atoi(argv[1]);
     int numProcesses = atoi(argv[2]);
+    string infileName = argv[3];
+    string outfileName = argv[4];
 
-    /* Clean exit if args nonsensible */
+     /* Clean exit if args nonsensible or can't open the file */
     if((numProcesses < 0) || (arrSize < 0)) {
         errmsg("Invalid arguments provided.\n");
     }
 
     /* If there are more cores than N, no need to make additional processes */
     if(numProcesses > arrSize) { numProcesses = arrSize; }
+
+    /* Open the files */
+    ifstream inFile;
+    inFile.open(infileName);
+
+    /* Clean exit if unable to open the files*/
+    if(!inFile.is_open()) {
+        errmsg("Unable to open the input file.\n");
+    }
+
+    ofstream outFile;
+    outFile.open(outfileName);
+
+    if(!outFile.is_open()) {
+        inFile.close(); // Close the input file
+        errmsg("Unable to open the output file.\n");
+    }
 
     /* Create the shared memory segment */
     int key = 65; // key is arbitrary
@@ -58,9 +77,28 @@ int main(int argc, char* argv[]) {
     int *sumArr = memPtr; // Input at location 0
     int *Buffer = memPtr + sizeof(int)*arrSize; // Temp array at next location
 
-    for(int i = 0; i < arrSize ; i++) { 
-        sumArr[i] = 1;
-    } // Filled with all 1s for testing
+    /* Create the input array from the given input file */
+    int count = 0;
+    int currVal;
+    while(inFile >> currVal) {
+        if(count >= arrSize) { break; } // Do not continue if out of the given range
+        sumArr[count] = currVal;
+        count++;
+    }
+    // Close the file
+    inFile.close();
+
+    /* Clean exit if not enough input values */
+    if(count < (arrSize-1)) {
+        // Detach from shared memory
+        shmdt((void*) memPtr);
+
+        // Remove the shared memory segment
+        shmctl(memID, IPC_RMID, NULL);
+
+        // Terminate gracefully if not enough values in the file
+        errmsg("Not enough values in the input file.\n");
+    }
 
     cout << "Input ----\n";
     for(int i = 0 ; i < arrSize ; i++) {
@@ -123,6 +161,13 @@ int main(int argc, char* argv[]) {
     }
 
     // Final result is in sumArr
+
+    /* Write the result to the output file */
+    for(int i = 0 ; i < arrSize ; i++) {
+        outFile << sumArr[i] << '\n';
+    }
+    outFile.close();
+
     // Print the resulting array
     cout << "Result ----\n";
     for(int i = 0 ; i < arrSize ; i++) {
