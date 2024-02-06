@@ -1,7 +1,7 @@
 /*
 
-Compile: g++ -o prefixSum prefixSum.cpp
-Run: ./prefixSum N M
+Compile: g++ -o myCount my-count.cpp
+Run: ./myCount N M
 
 Where N = size of the array, M = number of processes
 
