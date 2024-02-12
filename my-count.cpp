@@ -43,13 +43,13 @@ int main(int argc, char* argv[]) {
     string M = argv[2];
 
     /* Clean exit if first two arguments are not positive integers */
-    for (int i = 0; i < N.length() ; i++) {
+    for (int i = 0; i < (int)N.length() ; i++) {
         if(!isdigit(N[i])) {
             errmsg("Invalid arguments provided.\n");
         }
     }
 
-    for (int i = 0; i < M.length() ; i++) {
+    for (int i = 0; i < (int)M.length() ; i++) {
         if(!isdigit(M[i])) {
             errmsg("Invalid arguments provided.\n");
         }
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
     /* Create the input array from the given input file */
     /* Open the input file */
     ifstream inFile;
-    inFile.open(infileName);
+    inFile.open(infileName.c_str());
 
     /* Clean exit if unable to open the input file */
     if(!inFile.is_open()) {
@@ -165,7 +165,7 @@ int main(int argc, char* argv[]) {
     // Final result is in sumArr
     /* Open the output file */
     ofstream outFile;
-    outFile.open(outfileName);
+    outFile.open(outfileName.c_str());
 
     /* Clean exit if unable to open the output file */
     if(!outFile.is_open()) {
