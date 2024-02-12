@@ -7,11 +7,6 @@ This program computes a prefix sum with Hillis and Steele's parallel algorithm.
 The specified number of processes are created with each iteration while the parent process waits for them to terminate.
 It uses two arrays for space efficiency.
 
-Compile: g++ -o myCount my-count.cpp
-Run: ./prefixSum N M A.txt B.txt
-
-Where N = size of the array, M = number of processes, A.txt = the input filename, B.txt = the output filename
-
 */
 
 #include <sys/wait.h>
