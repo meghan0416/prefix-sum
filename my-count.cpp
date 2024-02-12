@@ -1,5 +1,12 @@
 /*
 
+Authors: Meghan Grayson and Vaishnavi Karaguppi
+Date: February 11, 2024
+
+This program computes a prefix sum with Hillis and Steele's parallel algorithm.
+The specified number of processes are created with each iteration while the parent process waits for them to terminate.
+It uses two arrays for space efficiency.
+
 Compile: g++ -o myCount my-count.cpp
 Run: ./prefixSum N M A.txt B.txt
 
@@ -22,18 +29,17 @@ using namespace std;
 
 /* Handle errors and bad input */
 // @param msg: String to be printed
-
 void errmsg(string msg) {
     cerr << msg;
-    exit(0);
+    exit(1);
 }
 
 int main(int argc, char* argv[]) {
 
-    int numArgs = 4; // Values N, M, input file string, output file string
+    int numArgs = 5; // Values N, M, input file string, output file string
 
     /* Clean exit if not enough args */
-    if(argc < (numArgs+1)) {
+    if(argc < numArgs) {
         errmsg("Not enough arguments provided.\n");
     }
     
@@ -51,38 +57,37 @@ int main(int argc, char* argv[]) {
     /* If there are more cores than N, no need to make additional processes */
     if(numProcesses > arrSize) { numProcesses = arrSize; }
 
-    /* Open the files */
-    ifstream inFile;
-    inFile.open(infileName);
-
-    /* Clean exit if unable to open the files*/
-    if(!inFile.is_open()) {
-        errmsg("Unable to open the input file.\n");
-    }
-
-    ofstream outFile;
-    outFile.open(outfileName);
-
-    if(!outFile.is_open()) {
-        inFile.close(); // Close the input file
-        errmsg("Unable to open the output file.\n");
-    }
-
     /* Create the shared memory segment */
-    int key = 65; // key is arbitrary
-    int memID = shmget(key, sizeof(int)*arrSize*2, 0666|IPC_CREAT);
+    int memID = shmget(IPC_PRIVATE, sizeof(int)*arrSize*2, 0666|IPC_CREAT);
+    // Clean exit if unable to create the shared memory
+    if(memID < 0) {
+        errmsg("Error creating shared memory segment.\n");
+    }
     int *memPtr = (int*)shmat(memID, NULL, 0); // shmat returns a pointer to the shared memory segment
     
     /* Init test arrays and attach to shared memory */
     int *sumArr = memPtr; // Input at location 0
-    int *Buffer = memPtr + sizeof(int)*arrSize; // Temp array at next location
+    int *buffer = memPtr + sizeof(int)*arrSize; // Temp array at next location
 
     /* Create the input array from the given input file */
-    int count = 0;
-    int currVal;
-    while(inFile >> currVal) {
+    /* Open the input file */
+    ifstream inFile;
+    inFile.open(infileName);
+
+    /* Clean exit if unable to open the input file */
+    if(!inFile.is_open()) {
+        // Detach from shared memory
+        shmdt((void*) memPtr);
+        // Remove the shared memory segment
+        shmctl(memID, IPC_RMID, NULL);
+        errmsg("Unable to open the input file.\n");
+    }
+
+    int count = 0; // To track how many input values have been read
+    int currVal; // To hold the current input value
+    while(inFile >> currVal) { // Read from file
         if(count >= arrSize) { break; } // Do not continue if out of the given range
-        sumArr[count] = currVal;
+        sumArr[count] = currVal; // Store in the shared memory array
         count++;
     }
     // Close the file
@@ -92,25 +97,17 @@ int main(int argc, char* argv[]) {
     if(count < (arrSize-1)) {
         // Detach from shared memory
         shmdt((void*) memPtr);
-
         // Remove the shared memory segment
         shmctl(memID, IPC_RMID, NULL);
-
-        // Terminate gracefully if not enough values in the file
         errmsg("Not enough values in the input file.\n");
     }
-
-    cout << "Input ----\n";
-    for(int i = 0 ; i < arrSize ; i++) {
-        cout << sumArr[i] << " ";
-    }
-    cout << endl;
 
     // Calculate the number of iterations needed
     int iterations = floor(log2f(arrSize));
 
     // Calculate the size of each block (index range per process)
     int blockSize = round((float)arrSize/(float)numProcesses);
+    // To be used in the algorithm
     int blockStart;
     int blockEnd;
     int algVal;
@@ -120,10 +117,9 @@ int main(int argc, char* argv[]) {
     for(int i = 0 ; i <= iterations; i++) {
         for(int j = 0 ; j < numProcesses ; j++) { 
             // j is the process number, i is the iteration
-            // For all iterations, "bufferOne" is the current iteration array, "bufferTwo" is next iteration array
+            // For all iterations, "sumArr" is the current iteration array, "buffer" is next iteration array
             if(fork() == 0) {
-
-                /* Child process */
+                /* Child process begin here */
                 algVal = (int)pow(2, i); // Used for algorithm
 
                 // Determine range for process
@@ -138,12 +134,11 @@ int main(int argc, char* argv[]) {
                 // Hillis and Steele algorithm
                 for(int k = blockStart ; k < blockEnd ; k++) {
                     if(k >= arrSize) { break; } // Out of range, don't calculate
-
                     if(k < algVal) {
-                        Buffer[k] = sumArr[k]; // Same value copied for next iteration
+                        buffer[k] = sumArr[k]; // Same value copied for next iteration
                     }
                     else {
-                        Buffer[k] = sumArr[k] + sumArr[k - algVal];
+                        buffer[k] = sumArr[k] + sumArr[k - algVal];
                     }
                 }
                 // Child process ends
@@ -156,24 +151,28 @@ int main(int argc, char* argv[]) {
 
         // Swap the buffer arrays
         int* temp = sumArr;
-        sumArr = Buffer;
-        Buffer = temp;
+        sumArr = buffer;
+        buffer = temp;
     }
-
     // Final result is in sumArr
+    /* Open the output file */
+    ofstream outFile;
+    outFile.open(outfileName);
+
+    /* Clean exit if unable to open the output file */
+    if(!outFile.is_open()) {
+        // Detach from shared memory
+        shmdt((void*) memPtr);
+        // Remove the shared memory segment
+        shmctl(memID, IPC_RMID, NULL);
+        errmsg("Unable to open the output file.\n");
+    }
 
     /* Write the result to the output file */
     for(int i = 0 ; i < arrSize ; i++) {
         outFile << sumArr[i] << '\n';
     }
     outFile.close();
-
-    // Print the resulting array
-    cout << "Result ----\n";
-    for(int i = 0 ; i < arrSize ; i++) {
-        cout << sumArr[i] << " ";
-    }
-    cout << endl;
 
     // Detach from shared memory
     shmdt((void*) memPtr);
