@@ -42,13 +42,12 @@ int main(int argc, char* argv[]) {
     string N = argv[1];
     string M = argv[2];
 
-    /* Clean exit if first two arguments are not positive integers */
+    /* Clean exit if first two arguments are not non-negative integers */
     for (int i = 0; i < (int)N.length() ; i++) {
         if(!isdigit(N[i])) {
             errmsg("Invalid arguments provided.\n");
         }
     }
-
     for (int i = 0; i < (int)M.length() ; i++) {
         if(!isdigit(M[i])) {
             errmsg("Invalid arguments provided.\n");
@@ -60,6 +59,11 @@ int main(int argc, char* argv[]) {
     int numProcesses = atoi(argv[2]);
     string infileName = argv[3];
     string outfileName = argv[4];
+
+    /* Clean exit if either argument is 0 */
+    if(arrSize <= 0 || numProcesses <= 0) {
+        errmsg("Invalid arguments provided.\n");
+    }
 
     /* If there are more cores than N, no need to make additional processes */
     if(numProcesses > arrSize) { numProcesses = arrSize; }
