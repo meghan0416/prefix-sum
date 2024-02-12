@@ -43,16 +43,28 @@ int main(int argc, char* argv[]) {
         errmsg("Not enough arguments provided.\n");
     }
     
+    // Temporarily store the first two arguments
+    string N = argv[1];
+    string M = argv[2];
+
+    /* Clean exit if first two arguments are not positive integers */
+    for (int i = 0; i < N.length() ; i++) {
+        if(!isdigit(N[i])) {
+            errmsg("Invalid arguments provided.\n");
+        }
+    }
+
+    for (int i = 0; i < M.length() ; i++) {
+        if(!isdigit(M[i])) {
+            errmsg("Invalid arguments provided.\n");
+        }
+    }
+
     /* Assign the input args */
     int arrSize = atoi(argv[1]);
     int numProcesses = atoi(argv[2]);
     string infileName = argv[3];
     string outfileName = argv[4];
-
-     /* Clean exit if args nonsensible or can't open the file */
-    if((numProcesses < 0) || (arrSize < 0)) {
-        errmsg("Invalid arguments provided.\n");
-    }
 
     /* If there are more cores than N, no need to make additional processes */
     if(numProcesses > arrSize) { numProcesses = arrSize; }
@@ -114,6 +126,7 @@ int main(int argc, char* argv[]) {
 
     int status = 0; // For waiting for child processes
 
+    /* Create all the child processes and perform the algorithm here */
     for(int i = 0 ; i <= iterations; i++) {
         for(int j = 0 ; j < numProcesses ; j++) { 
             // j is the process number, i is the iteration
