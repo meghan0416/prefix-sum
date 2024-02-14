@@ -23,47 +23,145 @@ It uses two arrays for space efficiency.
 using namespace std;
 
 /* Handle errors and bad input */
-// @param msg: String to be printed
+// msg -- String to be printed
 void errmsg(string msg) {
     cerr << msg;
     exit(1);
 }
 
-int main(int argc, char* argv[]) {
+/* Determine if input values for N and M are valid */
+// argCount -- number of arguments provided to main
+// args -- array containing the arguments provided to main as strings
+//
+// return -- 0 if valid, -1 if not valid
+int verifyArgs(int argCount, char* args[]) {
+    int numArgs = 5; // values N, M, input file string, output file string
 
-    int numArgs = 5; // Values N, M, input file string, output file string
-
-    /* Clean exit if not enough args */
-    if(argc < numArgs) {
-        errmsg("Not enough arguments provided.\n");
+    /* Clean exit if not enough arguments */
+    if(argCount < numArgs) {
+        return -1;
     }
-    
+
     // Temporarily store the first two arguments
-    string N = argv[1];
-    string M = argv[2];
+    string N = args[1];
+    string M = args[2];
 
-    /* Clean exit if first two arguments are not non-negative integers */
-    for (int i = 0; i < (int)N.length() ; i++) {
+    // Verify that N and M are non-negative integers
+    for(int i = 0; i < N.length(); i++) {
         if(!isdigit(N[i])) {
-            errmsg("Invalid arguments provided.\n");
+            return -1;
         }
     }
-    for (int i = 0; i < (int)M.length() ; i++) {
+    for(int i = 0; i < M.length(); i++) {
         if(!isdigit(M[i])) {
-            errmsg("Invalid arguments provided.\n");
+            return -1;
         }
     }
 
+    // Verify values of N and M are greater than 0
+    int valN = atoi(args[1]);
+    int valM = atoi(args[2]);
+    if(valN <= 0 || valM <=0) {
+        return -1;
+    }
+
+    return 0; // Validated the arguments
+}
+
+/* Create the input array from the given input file */
+// filename -- the name of the input file
+// array -- the location for the values to be stored
+// N -- The length of the input array
+//
+// return -- the number of values written, or -1 if unable to open the file
+int makeInputArray(string filename, int* array, int N) {
+    ifstream in;
+    in.open(filename.c_str());
+
+    /* Clean exit if unable to open the file */
+    if(!in.is_open()) {
+        return -1;
+    }
+
+    // Create the array
+    int count = 0;
+    int currentValue;
+    while(in >> currentValue) {
+        if(count >= N) { break; } // Do not go out of range
+        array[count] = currentValue;
+        count++;
+    }
+
+    in.close(); // Close the input file
+    return count;
+}
+
+/* Create the output file from the given array */
+// filename -- the name of the output file
+// array -- the location of the values to be written
+// N -- The length of the output array
+//
+// return -- 0 if successful, or -1 if unable to open the file
+int writeOutputArray(string filename, int* array, int N) {
+    ofstream out;
+    out.open(filename.c_str());
+
+    /* Clean exit if unable to open the file */
+    if(!out.is_open()) {
+        return -1;
+    }
+
+    // Write the array to the output file
+    for(int i = 0 ; i < N ; i++) {
+        out << array[i] << '\n';
+    }
+    out.close();
+
+    return 0;
+}
+
+/* Perform the Hillis and Steele algorithm, executed by child processes */
+// arr1 -- array for the "current" iteration
+// arr2 -- array for the "next" iteration
+// processNum -- the number associated with the current process
+// processes -- the total number of processes
+// iter -- the current iteration
+// blockSize -- the number of elements to be handled by the current process
+// arraySize -- the size/length of the arrays
+void parallelScan(int* arr1, int* arr2, int processNum, int processes, int iter, int blockSize, int arraySize) {
+    // Determine the range for the current process
+    int blockStart = processNum * blockSize;
+    int blockEnd = blockStart + blockSize;
+
+    // If current process is the last one, blockEnd should be the last element
+    if(processNum == (processes -1)) { blockEnd = arraySize; }
+
+    int temp = (int)pow(2, iter); // value to be used in the algorithm
+
+    // Perform algorithm
+    for(int k = blockStart ; k < blockEnd ; k++) {
+        if(k >= arraySize) { break; } // Out of range, don't calculate
+        if(k < temp) {
+            arr2[k] = arr1[k]; // Same value copied for next iteration
+        }
+        else {
+            arr2[k] = arr1[k] + arr1[k - temp];
+        }
+    }
+}
+
+
+/* Start of the main function */
+int main(int argc, char* argv[]) {
+    // Check the number of arguments and values for N and M are valid
+    if(verifyArgs(argc, argv) < 0) {
+        errmsg("Invalid arguments provided.\n"); // clean exit
+    }
     /* Assign the input args */
     int arrSize = atoi(argv[1]);
     int numProcesses = atoi(argv[2]);
     string infileName = argv[3];
     string outfileName = argv[4];
-
-    /* Clean exit if either argument is 0 */
-    if(arrSize <= 0 || numProcesses <= 0) {
-        errmsg("Invalid arguments provided.\n");
-    }
 
     /* If there are more cores than N, no need to make additional processes */
     if(numProcesses > arrSize) { numProcesses = arrSize; }
@@ -76,33 +174,22 @@ int main(int argc, char* argv[]) {
     }
     int *memPtr = (int*)shmat(memID, NULL, 0); // shmat returns a pointer to the shared memory segment
     
-    /* Init test arrays and attach to shared memory */
+    /* Init arrays and barrier and attach to shared memory */
     int *sumArr = memPtr; // Input at location 0
     int *buffer = memPtr + sizeof(int)*arrSize; // Temp array at next location
 
     /* Create the input array from the given input file */
-    /* Open the input file */
-    ifstream inFile;
-    inFile.open(infileName.c_str());
+    // count = the number of values read from the input file, or -1 if file was not able to open
+    int count = makeInputArray(infileName, sumArr, arrSize);
 
     /* Clean exit if unable to open the input file */
-    if(!inFile.is_open()) {
+    if(count < 0) {
         // Detach from shared memory
         shmdt((void*) memPtr);
         // Remove the shared memory segment
         shmctl(memID, IPC_RMID, NULL);
         errmsg("Unable to open the input file.\n");
     }
-
-    int count = 0; // To track how many input values have been read
-    int currVal; // To hold the current input value
-    while(inFile >> currVal) { // Read from file
-        if(count >= arrSize) { break; } // Do not continue if out of the given range
-        sumArr[count] = currVal; // Store in the shared memory array
-        count++;
-    }
-    // Close the file
-    inFile.close();
 
     /* Clean exit if not enough input values */
     if(count < (arrSize-1)) {
@@ -118,11 +205,6 @@ int main(int argc, char* argv[]) {
 
     // Calculate the size of each block (index range per process)
     int blockSize = round((float)arrSize/(float)numProcesses);
-    // To be used in the algorithm
-    int blockStart;
-    int blockEnd;
-    int algVal;
-
     int status = 0; // For waiting for child processes
 
     /* Create all the child processes and perform the algorithm here */
@@ -132,32 +214,11 @@ int main(int argc, char* argv[]) {
             // For all iterations, "sumArr" is the current iteration array, "buffer" is next iteration array
             if(fork() == 0) {
                 /* Child process begin here */
-                algVal = (int)pow(2, i); // Used for algorithm
-
-                // Determine range for process
-                blockStart = j*blockSize;
-                blockEnd = blockStart + blockSize;
-
-                // If it's the last process, end at arrSize
-                if(j == (numProcesses-1)) {
-                    blockEnd = arrSize;
-                }
-
-                // Hillis and Steele algorithm
-                for(int k = blockStart ; k < blockEnd ; k++) {
-                    if(k >= arrSize) { break; } // Out of range, don't calculate
-                    if(k < algVal) {
-                        buffer[k] = sumArr[k]; // Same value copied for next iteration
-                    }
-                    else {
-                        buffer[k] = sumArr[k] + sumArr[k - algVal];
-                    }
-                }
+                parallelScan(sumArr, buffer, j, numProcesses, i, blockSize, arrSize);
                 // Child process ends
                 exit(0);
             }
         }
-
         // Wait for all children to complete
         while(wait(&status) > 0);
 
@@ -166,25 +227,16 @@ int main(int argc, char* argv[]) {
         sumArr = buffer;
         buffer = temp;
     }
-    // Final result is in sumArr
-    /* Open the output file */
-    ofstream outFile;
-    outFile.open(outfileName.c_str());
 
-    /* Clean exit if unable to open the output file */
-    if(!outFile.is_open()) {
+    // Write the result to the output file
+    // Clean exit if unable to open the output file
+    if(writeOutputArray(outfileName, sumArr, arrSize) < 0) {
         // Detach from shared memory
         shmdt((void*) memPtr);
         // Remove the shared memory segment
         shmctl(memID, IPC_RMID, NULL);
         errmsg("Unable to open the output file.\n");
     }
-
-    /* Write the result to the output file */
-    for(int i = 0 ; i < arrSize ; i++) {
-        outFile << sumArr[i] << '\n';
-    }
-    outFile.close();
 
     // Detach from shared memory
     shmdt((void*) memPtr);
