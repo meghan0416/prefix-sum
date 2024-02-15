@@ -19,13 +19,15 @@ It uses two arrays for space efficiency.
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
+#include <sys/stat.h>
+#include <errno.h>
 
 using namespace std;
 
 /* Handle errors and bad input */
 // msg -- String to be printed
 void errmsg(string msg) {
-    cerr << msg;
+    perror(msg.c_str());
     exit(1);
 }
 
@@ -47,12 +49,12 @@ int verifyArgs(int argCount, char* args[]) {
     string M = args[2];
 
     // Verify that N and M are non-negative integers
-    for(int i = 0; i < N.length(); i++) {
+    for(int i = 0; i < (int)N.length(); i++) {
         if(!isdigit(N[i])) {
             return -1;
         }
     }
-    for(int i = 0; i < M.length(); i++) {
+    for(int i = 0; i < (int)M.length(); i++) {
         if(!isdigit(M[i])) {
             return -1;
         }
@@ -150,6 +152,17 @@ void parallelScan(int* arr1, int* arr2, int processNum, int processes, int iter,
     }
 }
 
+/* Synchronize the processes with the barrier */
+// turn -- a pointer to the barrier sum
+// processNum -- number associated with the current process
+// iter -- the current iteration
+// processes -- the total number of processes
+void synchronize(int* turn, int processNum, int iter, int processes) {
+    while(turn[0] != ((iter*processes) + processNum)); // Current process must wait for its turn
+    turn[0]++; // Increment the barrier since it's our turn
+    while(turn[0] < ((iter+1)*processes)); // Wait for all processes to have their turn for this iteration
+}
+
 
 /* Start of the main function */
 int main(int argc, char* argv[]) {
@@ -166,38 +179,41 @@ int main(int argc, char* argv[]) {
     /* If there are more cores than N, no need to make additional processes */
     if(numProcesses > arrSize) { numProcesses = arrSize; }
 
-    /* Create the shared memory segment */
-    int memID = shmget(IPC_PRIVATE, sizeof(int)*arrSize*2, 0666|IPC_CREAT);
+    /* Create the shared memory segments */
+    size_t memSize1 = sizeof(int)*arrSize;
+    size_t memSize2 = sizeof(int)*arrSize;
+    size_t memSize3 = sizeof(int);
+    int memID1 = shmget(IPC_PRIVATE, memSize1, S_IRUSR | S_IWUSR );
+    int memID2 = shmget(IPC_PRIVATE, memSize2, S_IRUSR | S_IWUSR );
+    int memID3 = shmget(IPC_PRIVATE, memSize3, S_IRUSR | S_IWUSR );
     // Clean exit if unable to create the shared memory
-    if(memID < 0) {
+    if(memID1 < 0 || memID2 < 0 || memID3 < 0) {
         errmsg("Error creating shared memory segment.\n");
     }
-    int *memPtr = (int*)shmat(memID, NULL, 0); // shmat returns a pointer to the shared memory segment
+
+    /* Init arrays and barrier and attach to shared memory*/
+    int *inArray = (int*)shmat(memID1, NULL, 0); // shmat returns a pointer to the shared memory segment
+    int *outArray = (int*)shmat(memID2, NULL, 0);
+    int *barrier = (int*)shmat(memID3, NULL, 0);
     
-    /* Init arrays and barrier and attach to shared memory */
-    int *sumArr = memPtr; // Input at location 0
-    int *buffer = memPtr + sizeof(int)*arrSize; // Temp array at next location
+    /* Init the barrier */
+    *barrier = 0;
 
     /* Create the input array from the given input file */
     // count = the number of values read from the input file, or -1 if file was not able to open
-    int count = makeInputArray(infileName, sumArr, arrSize);
+    int count = makeInputArray(infileName, inArray, arrSize);
 
-    /* Clean exit if unable to open the input file */
-    if(count < 0) {
+    /* Clean exit if unable to open the input file or not enough input values */
+    if(count < 0 || count < (arrSize-1)) {
         // Detach from shared memory
-        shmdt((void*) memPtr);
+        shmdt((void*) inArray);
+        shmdt((void*) outArray);
+        shmdt((void*) barrier);
         // Remove the shared memory segment
-        shmctl(memID, IPC_RMID, NULL);
-        errmsg("Unable to open the input file.\n");
-    }
-
-    /* Clean exit if not enough input values */
-    if(count < (arrSize-1)) {
-        // Detach from shared memory
-        shmdt((void*) memPtr);
-        // Remove the shared memory segment
-        shmctl(memID, IPC_RMID, NULL);
-        errmsg("Not enough values in the input file.\n");
+        shmctl(memID1, IPC_RMID, NULL);
+        shmctl(memID2, IPC_RMID, NULL);
+        shmctl(memID3, IPC_RMID, NULL);
+        errmsg("Invalid input file.\n");
     }
 
     // Calculate the number of iterations needed
@@ -207,42 +223,55 @@ int main(int argc, char* argv[]) {
     int blockSize = round((float)arrSize/(float)numProcesses);
     int status = 0; // For waiting for child processes
 
-    /* Create all the child processes and perform the algorithm here */
-    for(int i = 0 ; i <= iterations; i++) {
-        for(int j = 0 ; j < numProcesses ; j++) { 
-            // j is the process number, i is the iteration
-            // For all iterations, "sumArr" is the current iteration array, "buffer" is next iteration array
-            if(fork() == 0) {
-                /* Child process begin here */
-                parallelScan(sumArr, buffer, j, numProcesses, i, blockSize, arrSize);
-                // Child process ends
-                exit(0);
+    /* Create the processes */
+    for(int j = 0 ; j < numProcesses ; j++) {
+        if(fork() == 0) {
+            // Child process begins here
+            // j is the process number
+            for(int i = 0 ; i <= iterations ; i++) {
+                parallelScan(inArray, outArray, j, numProcesses, i, blockSize, arrSize); // Compute for this iteration
+                synchronize(barrier, j, i, numProcesses); // synchronize all processes
+                // Swap the arrays
+                int* temp = inArray;
+                inArray = outArray;
+                outArray = temp;
             }
+            // Child process ends
+            exit(0);
         }
-        // Wait for all children to complete
-        while(wait(&status) > 0);
+    }
+    // Parent wait for children to complete
+    while(wait(&status) > 0);
 
-        // Swap the buffer arrays
-        int* temp = sumArr;
-        sumArr = buffer;
-        buffer = temp;
+    // If iterations is odd, swap the arrays
+    if((iterations % 2) != 0) {
+        int* temp = inArray;
+        inArray = outArray;
+        outArray = temp;
     }
 
     // Write the result to the output file
     // Clean exit if unable to open the output file
-    if(writeOutputArray(outfileName, sumArr, arrSize) < 0) {
+    if(writeOutputArray(outfileName, outArray, arrSize) < 0) {
         // Detach from shared memory
-        shmdt((void*) memPtr);
+        shmdt((void*) inArray);
+        shmdt((void*) outArray);
+        shmdt((void*) barrier);
         // Remove the shared memory segment
-        shmctl(memID, IPC_RMID, NULL);
+        shmctl(memID1, IPC_RMID, NULL);
+        shmctl(memID2, IPC_RMID, NULL);
+        shmctl(memID3, IPC_RMID, NULL);
         errmsg("Unable to open the output file.\n");
     }
 
     // Detach from shared memory
-    shmdt((void*) memPtr);
-
+    shmdt((void*) inArray);
+    shmdt((void*) outArray);
+    shmdt((void*) barrier);
     // Remove the shared memory segment
-    shmctl(memID, IPC_RMID, NULL);
+    shmctl(memID1, IPC_RMID, NULL);
+    shmctl(memID2, IPC_RMID, NULL);
+    shmctl(memID3, IPC_RMID, NULL);
 
     return 0;
 }
