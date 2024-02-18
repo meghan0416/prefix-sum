@@ -4,8 +4,9 @@ Authors: Meghan Grayson and Vaishnavi Karaguppi
 Date: February 11, 2024
 
 This program computes a prefix sum with Hillis and Steele's parallel algorithm.
-The specified number of processes are created with each iteration while the parent process waits for them to terminate.
-It uses two arrays for space efficiency.
+The specified number of processes are created by the parent process. Each process performs the algorithm on a subset of the
+input array's elements. Two arrays of size N are used for all intermediate prefix sum array. A barrier is implemented with a
+simple counter, so the barrier is implemented with space complexity of O(1).
 
 */
 
@@ -24,18 +25,21 @@ It uses two arrays for space efficiency.
 
 using namespace std;
 
-/* Handle errors and bad input */
-// msg -- String to be printed
+/* 
+Handle errors and bad input
+param      String to be printed to user
+*/
 void errmsg(string msg) {
     perror(msg.c_str());
     exit(1);
 }
 
-/* Determine if input values for N and M are valid */
-// argCount -- number of arguments provided to main
-// args -- array containing the arguments provided to main as strings
-//
-// return -- 0 if valid, -1 if not valid
+/* 
+Determines if input values for N and M are valid, and if enough arguments were provided.
+param       argCount -- number of total arguments from main
+            args -- arguments array from main
+return      -1 if invalid, 0 if valie
+*/
 int verifyArgs(int argCount, char* args[]) {
     int numArgs = 5; // values N, M, input file string, output file string
 
@@ -70,12 +74,13 @@ int verifyArgs(int argCount, char* args[]) {
     return 0; // Validated the arguments
 }
 
-/* Create the input array from the given input file */
-// filename -- the name of the input file
-// array -- the location for the values to be stored
-// N -- The length of the input array
-//
-// return -- the number of values written, or -1 if unable to open the file
+/* 
+Create the input array from the given input file
+param       filename -- path of the file to be read
+            array -- Pointer to the first element of the input array to be initialized
+            N -- the number of values to be read
+return      the number of values written, or -1 if unable to open the file
+*/
 int makeInputArray(string filename, int* array, int N) {
     ifstream in;
     in.open(filename.c_str());
@@ -98,12 +103,13 @@ int makeInputArray(string filename, int* array, int N) {
     return count;
 }
 
-/* Create the output file from the given array */
-// filename -- the name of the output file
-// array -- the location of the values to be written
-// N -- The length of the output array
-//
-// return -- 0 if successful, or -1 if unable to open the file
+/* 
+Create the output file from the given array
+param       filename -- path of the file to be written to
+            array -- Pointer to the first element of the output array to be read
+            N -- the size of the array
+return      0 if successful, or -1 if unable to open the file
+*/
 int writeOutputArray(string filename, int* array, int N) {
     ofstream out;
     out.open(filename.c_str());
@@ -122,21 +128,23 @@ int writeOutputArray(string filename, int* array, int N) {
     return 0;
 }
 
-/* Perform the Hillis and Steele algorithm, executed by child processes */
-// arr1 -- array for the "current" iteration
-// arr2 -- array for the "next" iteration
-// processNum -- the number associated with the current process
-// processes -- the total number of processes
-// iter -- the current iteration
-// blockSize -- the number of elements to be handled by the current process
-// arraySize -- the size/length of the arrays
-void parallelScan(int* arr1, int* arr2, int processNum, int processes, int iter, int blockSize, int arraySize) {
+/* 
+Perform the Hillis and Steele algorithm, executed by child processes
+param       thisArray -- Array for the current iteration
+            nextArray -- array for the next iteration
+            thisProcess -- the number associated with the current process
+            processes -- the total number of processes
+            iter -- the number of the current iteration
+            blockSize -- the number of elements to be handled by the current process
+            arraySize -- the size of the arrays
+*/
+void parallelScan(int* thisArray, int* nextArray, int thisProcess, int processes, int iter, int blockSize, int arraySize) {
     // Determine the range for the current process
-    int blockStart = processNum * blockSize;
+    int blockStart = thisProcess * blockSize;
     int blockEnd = blockStart + blockSize;
 
     // If current process is the last one, blockEnd should be the last element
-    if(processNum == (processes -1)) { blockEnd = arraySize; }
+    if(thisProcess == (processes -1)) { blockEnd = arraySize; }
 
     int temp = (int)pow(2, iter); // value to be used in the algorithm
 
@@ -144,23 +152,52 @@ void parallelScan(int* arr1, int* arr2, int processNum, int processes, int iter,
     for(int k = blockStart ; k < blockEnd ; k++) {
         if(k >= arraySize) { break; } // Out of range, don't calculate
         if(k < temp) {
-            arr2[k] = arr1[k]; // Same value copied for next iteration
+            nextArray[k] = thisArray[k]; // Same value copied for next iteration
         }
         else {
-            arr2[k] = arr1[k] + arr1[k - temp];
+            nextArray[k] = thisArray[k] + thisArray[k - temp];
         }
     }
 }
 
-/* Synchronize the processes with the barrier */
-// turn -- a pointer to the barrier sum
-// processNum -- number associated with the current process
-// iter -- the current iteration
-// processes -- the total number of processes
-void synchronize(int* turn, int processNum, int iter, int processes) {
-    while(turn[0] != ((iter*processes) + processNum)); // Current process must wait for its turn
+/* 
+Synchronize the processes with the barrier
+param       turn -- Pointer to the barrier counter
+            thisProcess -- the number associated with the current process
+            iter -- the number of the current iteration
+            processes -- the total number of processes
+*/
+void synchronize(int* turn, int thisProcess, int iter, int processes) {
+    while(turn[0] != ((iter*processes) + thisProcess)); // Current process must wait for its turn
     turn[0]++; // Increment the barrier since it's our turn
     while(turn[0] < ((iter+1)*processes)); // Wait for all processes to have their turn for this iteration
+}
+
+/*
+Swap the array pointers.
+param       arrayOne -- a pointer to the first element of the first array
+            arrayTwo -- a pointer to the first element of the second arrray
+*/
+void swapArrays(int* arrayOne, int* arrayTwo) {
+    int* temp = arrayOne;
+    arrayOne - arrayTwo;
+    arrayTwo = temp;
+}
+
+/*
+Remove the shared memory segments associated with the given memory IDs
+param       memOne, memTwo, memThree -- Memory IDs of the shared memory segments
+            ptrOne, ptrTwo, ptrThree -- Pointers attached to the shared memory segments
+*/
+void removeMemory(int memOne, int memTwo, int memThree, int* ptrOne, int* ptrTwo, int* ptrThree) {
+    // Detach from shared memory
+    shmdt((void*) ptrOne);
+    shmdt((void*) ptrTwo);
+    shmdt((void*) ptrThree);
+    // Remove the shared memory segment
+    shmctl(memOne, IPC_RMID, NULL);
+    shmctl(memTwo, IPC_RMID, NULL);
+    shmctl(memThree, IPC_RMID, NULL);
 }
 
 
@@ -170,6 +207,7 @@ int main(int argc, char* argv[]) {
     if(verifyArgs(argc, argv) < 0) {
         errmsg("Invalid arguments provided.\n"); // clean exit
     }
+
     /* Assign the input args */
     int arrSize = atoi(argv[1]);
     int numProcesses = atoi(argv[2]);
@@ -186,6 +224,7 @@ int main(int argc, char* argv[]) {
     int memID1 = shmget(IPC_PRIVATE, memSize1, S_IRUSR | S_IWUSR );
     int memID2 = shmget(IPC_PRIVATE, memSize2, S_IRUSR | S_IWUSR );
     int memID3 = shmget(IPC_PRIVATE, memSize3, S_IRUSR | S_IWUSR );
+
     // Clean exit if unable to create the shared memory
     if(memID1 < 0 || memID2 < 0 || memID3 < 0) {
         errmsg("Error creating shared memory segment.\n");
@@ -205,14 +244,7 @@ int main(int argc, char* argv[]) {
 
     /* Clean exit if unable to open the input file or not enough input values */
     if(count < 0 || count < (arrSize-1)) {
-        // Detach from shared memory
-        shmdt((void*) inArray);
-        shmdt((void*) outArray);
-        shmdt((void*) barrier);
-        // Remove the shared memory segment
-        shmctl(memID1, IPC_RMID, NULL);
-        shmctl(memID2, IPC_RMID, NULL);
-        shmctl(memID3, IPC_RMID, NULL);
+        removeMemory(memID1, memID2, memID3, inArray, outArray, barrier); // Remove the shared memory
         errmsg("Invalid input file.\n");
     }
 
@@ -231,10 +263,7 @@ int main(int argc, char* argv[]) {
             for(int i = 0 ; i <= iterations ; i++) {
                 parallelScan(inArray, outArray, j, numProcesses, i, blockSize, arrSize); // Compute for this iteration
                 synchronize(barrier, j, i, numProcesses); // synchronize all processes
-                // Swap the arrays
-                int* temp = inArray;
-                inArray = outArray;
-                outArray = temp;
+                swapArrays(inArray, outArray); // swap the arrays
             }
             // Child process ends
             exit(0);
@@ -244,34 +273,17 @@ int main(int argc, char* argv[]) {
     while(wait(&status) > 0);
 
     // If iterations is odd, swap the arrays
-    if((iterations % 2) != 0) {
-        int* temp = inArray;
-        inArray = outArray;
-        outArray = temp;
-    }
+    if((iterations % 2) != 0) swapArrays(inArray, outArray);
 
     // Write the result to the output file
     // Clean exit if unable to open the output file
     if(writeOutputArray(outfileName, outArray, arrSize) < 0) {
-        // Detach from shared memory
-        shmdt((void*) inArray);
-        shmdt((void*) outArray);
-        shmdt((void*) barrier);
-        // Remove the shared memory segment
-        shmctl(memID1, IPC_RMID, NULL);
-        shmctl(memID2, IPC_RMID, NULL);
-        shmctl(memID3, IPC_RMID, NULL);
+        removeMemory(memID1, memID2, memID3, inArray, outArray, barrier);
         errmsg("Unable to open the output file.\n");
     }
 
-    // Detach from shared memory
-    shmdt((void*) inArray);
-    shmdt((void*) outArray);
-    shmdt((void*) barrier);
-    // Remove the shared memory segment
-    shmctl(memID1, IPC_RMID, NULL);
-    shmctl(memID2, IPC_RMID, NULL);
-    shmctl(memID3, IPC_RMID, NULL);
+    // Detach from shared memory and remove shared memory segment
+    removeMemory(memID1, memID2, memID3, inArray, outArray, barrier);
 
     return 0;
 }
