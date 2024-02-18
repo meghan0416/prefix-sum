@@ -273,9 +273,7 @@ int main(int argc, char* argv[]) {
     while(wait(&status) > 0);
 
     // If iterations is odd, swap the arrays
-    if((iterations % 2) != 0) {
-        swapArrays(&inArray, &outArray);
-    }
+    if((iterations % 2) != 0) swapArrays(&inArray, &outArray);
 
     // Write the result to the output file
     // Clean exit if unable to open the output file
