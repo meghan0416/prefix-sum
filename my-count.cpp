@@ -201,11 +201,11 @@ void removeMemory(int memOne, int memTwo, int memThree, int* ptrOne, int* ptrTwo
 }
 
 
-/* Start of the main function */
+/* Start of main */
 int main(int argc, char* argv[]) {
     // Check the number of arguments and values for N and M are valid
     if(verifyArgs(argc, argv) < 0) {
-        errmsg("Invalid arguments provided.\n"); // clean exit
+        errmsg("Invalid arguments provided."); // clean exit
     }
 
     /* Assign the input args */
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
 
     // Clean exit if unable to create the shared memory
     if(memID1 < 0 || memID2 < 0 || memID3 < 0) {
-        errmsg("Error creating shared memory segment.\n");
+        errmsg("Error creating shared memory segment.");
     }
 
     /* Init arrays and barrier and attach to shared memory*/
@@ -245,7 +245,7 @@ int main(int argc, char* argv[]) {
     /* Clean exit if unable to open the input file or not enough input values */
     if(count < 0 || count < (arrSize-1)) {
         removeMemory(memID1, memID2, memID3, inArray, outArray, barrier); // Remove the shared memory
-        errmsg("Invalid input file.\n");
+        errmsg("Invalid input file.");
     }
 
     // Calculate the number of iterations needed
@@ -279,7 +279,7 @@ int main(int argc, char* argv[]) {
     // Clean exit if unable to open the output file
     if(writeOutputArray(outfileName, outArray, arrSize) < 0) {
         removeMemory(memID1, memID2, memID3, inArray, outArray, barrier);
-        errmsg("Unable to open the output file.\n");
+        errmsg("Unable to open the output file.");
     }
 
     // Detach from shared memory and remove shared memory segment
