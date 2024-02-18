@@ -178,10 +178,10 @@ Swap the array pointers.
 param       arrayOne -- a pointer to the first element of the first array
             arrayTwo -- a pointer to the first element of the second arrray
 */
-void swapArrays(int* arrayOne, int* arrayTwo) {
-    int* temp = arrayOne;
-    arrayOne - arrayTwo;
-    arrayTwo = temp;
+void swapArrays(int** arrayOne, int** arrayTwo) {
+    int* temp = *arrayOne;
+    *arrayOne = *arrayTwo;
+    *arrayTwo = temp;
 }
 
 /*
@@ -263,7 +263,7 @@ int main(int argc, char* argv[]) {
             for(int i = 0 ; i <= iterations ; i++) {
                 parallelScan(inArray, outArray, j, numProcesses, i, blockSize, arrSize); // Compute for this iteration
                 synchronize(barrier, j, i, numProcesses); // synchronize all processes
-                swapArrays(inArray, outArray); // swap the arrays
+                swapArrays(&inArray, &outArray); // swap the arrays
             }
             // Child process ends
             exit(0);
@@ -273,7 +273,9 @@ int main(int argc, char* argv[]) {
     while(wait(&status) > 0);
 
     // If iterations is odd, swap the arrays
-    if((iterations % 2) != 0) swapArrays(inArray, outArray);
+    if((iterations % 2) != 0) {
+        swapArrays(&inArray, &outArray);
+    }
 
     // Write the result to the output file
     // Clean exit if unable to open the output file
